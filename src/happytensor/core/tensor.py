@@ -8,20 +8,21 @@ from typing import Tuple
 class Tensor:
     def __init__(
         self,
-        data: np.typing.ArrayLike,
-        requires_grad: bool = false,
-        _children: Tuple[Tensor, ...] = (),
+        data,
+        requires_grad=False,
+        _children=(),
         _op: str = "",
         _label: str = "",
     ):
         self.data = np.array(data)
+        self.requires_grad = requires_grad
         self.grad = None
 
         self._prev = _children
         self._op = _op
         self._label = _label
 
-    def __add__(self, o: np.typing.ArrayLike | Tensor) -> Tensor:
+    def __add__(self, o):
         other = o if isinstance(o, Tensor) else Tensor(o)
 
         sum_data = self.data + other.data
@@ -34,22 +35,22 @@ class Tensor:
         return out
 
     # component-wise multiplication
-    def __mul__(self, other: np.typing.ArrayLike | Tensor) -> Tensor:
-        o = other if isinstance(other, Tensor) else Tensor(other)
+    def __mul__(self, o):
+        other = o if isinstance(o, Tensor) else Tensor(o)
 
-        mul_data = np.multiply(self.data, o.data)
+        mul_data = np.multiply(self.data, other.data)
         out = Tensor(
             mul_data,
-            _children=(self, o),
+            _children=(self, other),
             _op="*",
-            _label=f"({self._label}) * ({o._label})",
+            _label=f"({self._label}) * ({other._label})",
         )
 
         return out
 
-    def __matmul__(self, o: np.typing.ArrayLike | Tensor) -> Tensor:
+    def __matmul__(self, o):
         other = o if isinstance(o, Tensor) else Tensor(o)
-        
+
         mm_data = np.matmul(self.data, other.data)
         out = Tensor(
             mm_data,
@@ -57,13 +58,19 @@ class Tensor:
             _op="@",
             _label=f"({self._label}) @ ({other._label})",
         )
+
         return out
 
+    def __radd__(self, other):
+        return self + other
 
-    def __rmul__(self, other: np.typing.ArrayLike | Tensor) -> Tensor:
-        print("Calling __rmul__")
+    def __rmul__(self, other):
         return self * other
 
-    def __repr__(self):
-        return f"Tensor(data={self.data}, requires_grad={self.requires_grad} grad={self.grad})"
+    def __rmatmul__(self, o):
+        other = o if isinstance(o, Tensor) else Tensor(o)
 
+        return other @ self
+
+    def __repr__(self):
+        return f"Tensor(data={self.data}, poop={self.requires_grad} grad={self.grad})"
