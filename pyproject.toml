@@ -1,5 +1,5 @@
 [project]
-name = "happytensor"
+name = "ht"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-happytensor = "happytensor:main"
+ht = "happytensor:main"
 
 [build-system]
 requires = ["uv_build>=0.12.11,<0.13.0"]
