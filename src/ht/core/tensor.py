@@ -13,8 +13,10 @@ from ht.core.context import context
 __all__ = ["Tensor", "zeros_like", "ones_like"]
 
 
-def _mk_children(children: Tuple[Tensor, ...]) -> Tuple[Tensor, ...]:
-    return children if context.is_grad_enabled else ()
+def _mk_children(
+    children: Tuple[Tensor, ...], requires_grad: bool
+) -> Tuple[Tensor, ...]:
+    return children if context.is_grad_enabled and requires_grad else ()
 
 
 class Tensor:
@@ -36,18 +38,20 @@ class Tensor:
         self._grad_fn = None
 
     def __add__(self, o):
-        other = o if isinstance(o, Tensor) else Tensor(o)
+        rg = self.requires_grad
+        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=rg)
+        assert o.requires_grad is rg
 
         sum_data = self.data + other.data
 
         out = Tensor(
             sum_data,
-            _children=_mk_children((self, other)),
+            _children=_mk_children((self, other), rg),
             _op="+",
             _label=f"({self._label}) + ({other._label})",
         )
 
-        if self.requires_grad and context.is_grad_enabled:
+        if rg and context.is_grad_enabled:
             assert other.requires_grad == True
 
             def grad_fn():
@@ -55,13 +59,14 @@ class Tensor:
                 assert isinstance(out.grad, Tensor)
                 assert not out.grad.requires_grad
 
-                self.grad = (
-                    zeros_like(self) if self.grad is None else self.grad
-                ) + out.grad
+                with NoGrad():
+                    self.grad = (
+                        zeros_like(self) if self.grad is None else self.grad
+                    ) + out.grad
 
-                other.grad = (
-                    zeros_like(other) if other.grad is None else other.grad
-                ) + out.grad
+                    other.grad = (
+                        zeros_like(other) if other.grad is None else other.grad
+                    ) + out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
@@ -70,18 +75,20 @@ class Tensor:
 
     # Component-wise multiplication (Hadamard Product)
     def __mul__(self, o):
-        other = o if isinstance(o, Tensor) else Tensor(o)
+        rg = self.requires_grad
+        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=rg)
+        assert o.requires_grad is rg
 
         mul_data = np.multiply(self.data, other.data)
 
         out = Tensor(
             mul_data,
-            _children=_mk_children((self, other)),
+            _children=_mk_children((self, other), self.requires_grad),
             _op="*",
             _label=f"({self._label}) * ({other._label})",
         )
 
-        if self.requires_grad and context.is_grad_enabled:
+        if rg and context.is_grad_enabled:
             assert other.requires_grad == True
 
             def grad_fn():
@@ -89,13 +96,14 @@ class Tensor:
                 assert isinstance(out.grad, Tensor)
                 assert not out.grad.requires_grad
 
-                self.grad = (
-                    ones_like(self) if self.grad is None else self.grad
-                ) * out.grad
+                with NoGrad():
+                    self.grad = (
+                        ones_like(self) if self.grad is None else self.grad
+                    ) * out.grad
 
-                other.grad = (
-                    ones_like(other) if other.grad is None else other.grad
-                ) * out.grad
+                    other.grad = (
+                        ones_like(other) if other.grad is None else other.grad
+                    ) * out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
@@ -103,18 +111,20 @@ class Tensor:
         return out
 
     def __matmul__(self, o):
-        other = o if isinstance(o, Tensor) else Tensor(o)
+        rg = self.requires_grad
+        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=rg)
+        assert rg is o.requires_grad
 
         mm_data = np.matmul(self.data, other.data)
 
         out = Tensor(
             mm_data,
-            _children=_mk_children((self, other)),
+            _children=_mk_children((self, other), self.requires_grad),
             _op="@",
             _label=f"({self._label}) @ ({other._label})",
         )
 
-        if self.requires_grad and context.is_grad_enabled:
+        if rg and context.is_grad_enabled:
             assert other.requires_grad == True
 
             def grad_fn():
@@ -131,21 +141,10 @@ class Tensor:
 
         return out
 
-    def __radd__(self, other):
-        return self + other
-
-    def __rmul__(self, other):
-        return self * other
-
-    def __rmatmul__(self, o):
-        other = o if isinstance(o, Tensor) else Tensor(o)
-
-        return other @ self
-
     def T(self):
         out = Tensor(
             self.data.T,
-            _children=_mk_children((self,)),
+            _children=_mk_children((self,), self.requires_grad),
             _op="^T",
             _label=f"({self._label})^T",
         )
@@ -157,12 +156,24 @@ class Tensor:
                 assert out.requires_grad == False
                 assert isinstance(out.grad, Tensor)
 
-                self.grad = out.grad.T()
+                with NoGrad():
+                    self.grad = out.grad.T()
 
             out.requires_grad = True
             out._grad_fn = grad_fn
 
         return out
+
+    def __radd__(self, other):
+        return self + other
+
+    def __rmul__(self, other):
+        return self * other
+
+    def __rmatmul__(self, o):
+        other = o if isinstance(o, Tensor) else Tensor(o)
+
+        return other @ self
 
     def shape(self):
         return self.data.shape
