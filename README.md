@@ -4,3 +4,4 @@ todo
 
 - [ ] fix broadcasting
 - [ ] implement loss
+- [ ] backward pass for matmul does not accumulate gradient
