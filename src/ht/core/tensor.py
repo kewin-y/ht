@@ -65,8 +65,10 @@ class Tensor:
                 assert not out.grad.requires_grad
 
                 with NoGrad():
-                    if self.ndim() == 0 and other.ndim() == 1:
-                        pass
+                    if self.ndim() == 2 and other.ndim() == 1:
+                        return NotImplemented
+                    elif self.ndim() == 1 and other.ndim() == 2:
+                        return NotImplemented
                     else:
                         self.grad = zeros_or_grad(self) + out.grad
                         other.grad = zeros_or_grad(other) + out.grad
@@ -100,8 +102,13 @@ class Tensor:
                 assert not out.grad.requires_grad
 
                 with NoGrad():
-                    self.grad = zeros_or_grad(self) + other * out.grad
-                    other.grad = zeros_or_grad(other) + self * out.grad
+                    if self.ndim() == 2 and other.ndim() == 1:
+                        return NotImplemented
+                    elif self.ndim() == 1 and other.ndim() == 2:
+                        return NotImplemented
+                    else:
+                        self.grad = zeros_or_grad(self) + other * out.grad
+                        other.grad = zeros_or_grad(other) + self * out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
