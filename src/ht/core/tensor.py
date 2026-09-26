@@ -17,6 +17,10 @@ def _mk_children(children: Tuple[Tensor, ...], requires_grad: bool) -> Tuple[Ten
     return children if context.is_grad_enabled and requires_grad else ()
 
 
+def zeros_or_grad(t: Tensor) -> Tensor:
+    return zeros_like(t) if t.grad is None else t.grad
+
+
 class Tensor:
     def __init__(
         self,
@@ -61,9 +65,11 @@ class Tensor:
                 assert not out.grad.requires_grad
 
                 with NoGrad():
-                    self.grad = (zeros_like(self) if self.grad is None else self.grad) + out.grad
-
-                    other.grad = (zeros_like(other) if other.grad is None else other.grad) + out.grad
+                    if self.ndim() == 0 and other.ndim() == 1:
+                        pass
+                    else:
+                        self.grad = zeros_or_grad(self) + out.grad
+                        other.grad = zeros_or_grad(other) + out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
@@ -72,9 +78,9 @@ class Tensor:
 
     # Component-wise multiplication (Hadamard Product)
     def __mul__(self, o):
-        rg = self.requires_grad
-        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=rg)
-        assert o.requires_grad is rg
+        reqg = self.requires_grad
+        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=reqg)
+        assert o.requires_grad is reqg
 
         mul_data = np.multiply(self.data, other.data)
 
@@ -85,7 +91,7 @@ class Tensor:
             _label=f"({self._label}) * ({other._label})",
         )
 
-        if rg and context.is_grad_enabled:
+        if reqg and context.is_grad_enabled:
             assert other.requires_grad == True
 
             def grad_fn():
@@ -94,9 +100,8 @@ class Tensor:
                 assert not out.grad.requires_grad
 
                 with NoGrad():
-                    self.grad = (ones_like(self) if self.grad is None else self.grad) * out.grad
-
-                    other.grad = (ones_like(other) if other.grad is None else other.grad) * out.grad
+                    self.grad = zeros_or_grad(self) + other * out.grad
+                    other.grad = zeros_or_grad(other) + self * out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
@@ -104,9 +109,9 @@ class Tensor:
         return out
 
     def __matmul__(self, o):
-        rg = self.requires_grad
-        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=rg)
-        assert rg is o.requires_grad
+        reqg = self.requires_grad
+        other = o if isinstance(o, Tensor) else Tensor(o, requires_grad=reqg)
+        assert reqg is o.requires_grad
 
         mm_data = np.matmul(self.data, other.data)
 
@@ -117,7 +122,7 @@ class Tensor:
             _label=f"({self._label}) @ ({other._label})",
         )
 
-        if rg and context.is_grad_enabled:
+        if reqg and context.is_grad_enabled:
             assert other.requires_grad == True
 
             def grad_fn():
@@ -132,8 +137,8 @@ class Tensor:
                     if self.ndim() == 1 and other.ndim() == 1:
                         # out.ndim = 0
                         # vector dot product
-                        self.grad = out.grad * other
-                        other.grad = out.grad * self
+                        self.grad = zeros_or_grad(self) + out.grad * other
+                        other.grad = zeros_or_grad(other) + out.grad * self
                     elif self.ndim() == 1 and other.ndim() == 2:
                         # LHS acts as a row vector.
                         # e.g., (n,) @ (n, m) becomes (1, n) @ (n, m)
@@ -141,10 +146,10 @@ class Tensor:
                         # out.ndim = 1
 
                         # shape(other.T) = (m, n)
-                        self.grad = out.grad @ other.T()
+                        self.grad = zeros_or_grad(self) + out.grad @ other.T()
 
                         # we need (n, 1) @ (1, m)
-                        other.grad = self.reshape((1, -1)).T() @ out.grad.reshape((1, -1))
+                        other.grad = zeros_or_grad(other) + self.reshape((1, -1)).T() @ out.grad.reshape((1, -1))
                     elif self.ndim() == 2 and other.ndim() == 1:
                         # Matrix-vector product
                         # e.g., (n, m) @ (m,) becomes (n, m) @ (m, 1)
@@ -152,13 +157,13 @@ class Tensor:
                         # out.ndim = 1
 
                         # we need (n, 1) @ (1, m)
-                        self.grad = out.grad.reshape((-1, 1)) @ other.reshape((-1, 1)).T()
+                        self.grad = zeros_or_grad(self) + out.grad.reshape((-1, 1)) @ other.reshape((-1, 1)).T()
 
                         # shape(self.T) = (m, n)
-                        other.grad = self.T() @ out.grad
+                        other.grad = zeros_or_grad(other) + self.T() @ out.grad
                     else:
-                        self.grad = out.grad @ other.T()
-                        other.grad = self.T() @ out.grad
+                        self.grad = zeros_or_grad(self) + out.grad @ other.T()
+                        other.grad = zeros_or_grad(other) + self.T() @ out.grad
 
             out.requires_grad = True
             out._grad_fn = grad_fn
@@ -181,7 +186,7 @@ class Tensor:
                 assert isinstance(out.grad, Tensor)
 
                 with NoGrad():
-                    self.grad = out.grad.T()
+                    self.grad = zeros_or_grad(self) + out.grad.T()
 
             out.requires_grad = True
             out._grad_fn = grad_fn
